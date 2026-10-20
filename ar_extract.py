@@ -6,7 +6,8 @@ Annual Report Financials Extractor
 For every annual-report PDF in a folder, saves two PDFs:
 
     CFS    Consolidated Balance Sheet, Statement of Profit and Loss and
-           Cash Flow Statement (the Statement of Changes in Equity is left out)
+           Cash Flow Statement, followed by the "Other expenses" note
+           (the Statement of Changes in Equity is left out)
     CFSN   Notes to the Consolidated Financial Statements
 
 Files are named <Company>_<FY>_CFS.pdf and <Company>_<FY>_CFSN.pdf, with the
@@ -314,7 +315,40 @@ def detect_financials(pages, basis, res):
     if notes_end == n - 1:
         res.warnings.append("notes run to end of file; check the last pages")
     res.pages["cfsn"] = list(range(notes_start, notes_end + 1))
+
+    # The "Other expenses" note goes at the end of CFS, for building financials
+    oe = find_other_expenses(pages, res.pages["cfsn"])
+    if oe:
+        res.pages["cfs"] = keep + [j for j in oe if j not in keep]
+    else:
+        res.warnings.append("Other expenses note not found")
     return True
+
+
+OTHER_EXP = r"other (operating )?expen(ses|diture)( net)?"
+
+
+def find_other_expenses(pages, notes):
+    """Pages of the 'Other expenses' note (its numbered heading, e.g.
+    '35 Other expenses', plus any 'contd' pages that follow)."""
+    head_rx = re.compile(rf"^(note )?\d{{1,3}}(\.\d+)?[a-z]? {OTHER_EXP}$")
+    contd_rx = re.compile(rf"^(note )?(\d{{1,3}}(\.\d+)?[a-z]? )?{OTHER_EXP} (contd|continued|cont)$")
+    for pos, j in enumerate(notes):
+        lines = pages[j].all_lines
+        k = next((k for k, ln in enumerate(lines) if head_rx.search(ln)), None)
+        if k is None:
+            continue
+        found = [j]
+        # Table cut off by the page end (no total after the heading): take the next page too
+        spill = not any(ln.startswith("total") for ln in lines[k + 1:])
+        for nxt in notes[pos + 1:pos + 3]:
+            if any(contd_rx.search(ln) for ln in pages[nxt].all_lines[:25]) or spill:
+                found.append(nxt)
+                spill = False
+            else:
+                break
+        return found
+    return []
 
 
 def detect_company(pages):

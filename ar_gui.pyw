@@ -68,7 +68,7 @@ class App:
         ttk.Label(main, text=APP_TITLE, style="Title.TLabel").pack(anchor="w")
         ttk.Label(main, style="Hint.TLabel",
                   text="Saves the Consolidated Financial Statements (Balance Sheet, Profit & Loss, "
-                       "Cash Flow) and their Notes from every annual report in a folder."
+                       "Cash Flow, Other expenses) and their Notes from every annual report in a folder."
                   ).pack(anchor="w", pady=(2, 12))
 
         # Step 1: folder
@@ -84,7 +84,7 @@ class App:
         step2.pack(fill="x", pady=(10, 0))
         chosen = settings.get("sections", list(ax.SECTIONS))
         self.want = {s: tk.BooleanVar(value=s in chosen) for s in ax.SECTIONS}
-        labels = {"cfs": "CFS  -  Consolidated Financial Statements (Balance Sheet, P&L, Cash Flow)",
+        labels = {"cfs": "CFS  -  Consolidated Financial Statements (Balance Sheet, P&L, Cash Flow + Other expenses note)",
                   "cfsn": "CFSN  -  Notes to the Consolidated Financial Statements"}
         for s in ax.SECTIONS:
             ttk.Checkbutton(step2, text=labels[s], variable=self.want[s]).pack(anchor="w", pady=1)
@@ -315,7 +315,7 @@ class CorrectDialog:
         self.cfsn = tk.StringVar(value=ax.fmt_pages(res.pages.get("cfsn")))
         fields = [("File name start", self.base, "e.g. Voltas_FY2025")]
         if "cfs" in row["sections"]:
-            fields.append(("Financial statements pages", self.cfs, "Balance Sheet, P&L, Cash Flow"))
+            fields.append(("Financial statements pages", self.cfs, "BS, P&L, Cash Flow, Other expenses"))
         if "cfsn" in row["sections"]:
             fields.append(("Notes pages", self.cfsn, "Notes to the consolidated statements"))
         for r, (label, var, hint) in enumerate(fields, 2):

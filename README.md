@@ -5,7 +5,7 @@ saves two PDFs:
 
 | File                    | What's in it                                                        |
 |-------------------------|---------------------------------------------------------------------|
-| `Voltas_FY2025_CFS.pdf`  | Consolidated Balance Sheet, Statement of Profit and Loss, Cash Flow Statement |
+| `Voltas_FY2025_CFS.pdf`  | Consolidated Balance Sheet, Statement of Profit and Loss, Cash Flow Statement, then the "Other expenses" note (the split of other expenses) |
 | `Voltas_FY2025_CFSN.pdf` | Notes to the Consolidated Financial Statements                      |
 
 The Statement of Changes in Equity is always left out. The company name and year are read from the
