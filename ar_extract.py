@@ -171,7 +171,10 @@ def statement_kind(page, basis):
     if re.search(AUDIT_TEXT, page.full) or share < 0.10:
         return None
     for kind, pat in STATEMENT_TITLES.items():
-        rx = rf"^(the )?((consolidated|standalone) )?(ind as )?{pat}\b"
+        # A title ends its line or runs into a date / "continued"; a sentence such
+        # as "the balance sheet shows the following amounts" is not a title.
+        rx = (rf"^(the )?((consolidated|standalone) )?(ind as )?{pat}"
+              rf"($|\s+(as|for|contd|continued|cont|and|including|of|at|on|year|period|\d))")
         hit = heading(page, rx)
         if not (hit and re.search(DATED, hit) and page_basis(hit, page) == basis
                 and not re.search(P["notes"], hit)):
@@ -354,7 +357,12 @@ def detect_financials(pages, basis, res):
                 notes_end -= 1
             break
     if notes_end == n - 1:
-        res.warnings.append("notes run to end of file; check the last pages")
+        # Reports that end with the financials finish with blank "Notes" memo
+        # pages and the back cover; trimming those means the notes ended normally.
+        while notes_end > notes_start and len(pages[notes_end].full.split()) < 30:
+            notes_end -= 1
+        if notes_end == n - 1:
+            res.warnings.append("notes run to end of file; check the last pages")
     res.pages["cfsn"] = list(range(notes_first, notes_end + 1))
 
     # The "Other expenses" note goes at the end of CFS, for building financials
