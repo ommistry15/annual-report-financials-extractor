@@ -11,11 +11,18 @@ saves two PDFs:
 The Statement of Changes in Equity is always left out. The company name and year are read from the
 report itself, so the PDFs can be named anything.
 
+Works on **Windows** and **Mac**. Same app, same results; only the file you double-click differs.
+
 ## First time only
-Install Python from python.org and tick **"Add Python to PATH"** during setup.
+- **Windows:** install Python from python.org and tick **"Add Python to PATH"** during setup.
+- **Mac:** nothing needed if you have [uv](https://docs.astral.sh/uv/) or Python 3 installed. If not, install
+  Python from [python.org](https://www.python.org/downloads/) (the macOS installer).
+  The first time you open `Extract Financials.command`, macOS may say it can't be opened: **right-click
+  it > Open > Open** once. After that a normal double-click works.
 
 ## Use
-1. Double-click **`Extract Financials.bat`**. (The first time, it installs two small components.)
+1. Double-click **`Extract Financials.bat`** (Windows) or **`Extract Financials.command`** (Mac).
+   The first time, it installs two small components (on Mac, into a private `.venv` folder next to it).
 2. Click **Choose folder...** and pick the folder with the annual reports.
 3. Tick what you want: **CFS**, **CFSN**, or both. Your choice is remembered for next time.
 4. Click **Extract**.
@@ -34,3 +41,6 @@ lets you check the page numbers.
   saved instead and the files end in `_STANDALONE`.
 - Scanned PDFs with no text can't be read. Run them through OCR first.
 - Command line (for testing): `python ar_extract.py "<folder>" --dry-run`
+  (on Mac: `.venv/bin/python ar_extract.py "<folder>" --dry-run`)
+- Mac: if the app ever stops opening (e.g. after a macOS or Python update), delete the `.venv` folder
+  and double-click `Extract Financials.command` again to rebuild it.

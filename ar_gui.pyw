@@ -3,12 +3,14 @@ Window for the Annual Report Financials Extractor.
 
 Pick a folder of annual-report PDFs, click Extract, and every report gets
 <Company>_<FY>_CFS.pdf and <Company>_<FY>_CFSN.pdf in an "Extracted" folder
-next to the reports. Start it by double-clicking "Extract Financials.bat".
+next to the reports. Start it by double-clicking "Extract Financials.bat" (Windows)
+or "Extract Financials.command" (Mac).
 """
 
 import json
 import os
 import queue
+import subprocess
 import sys
 import threading
 import tkinter as tk
@@ -18,8 +20,20 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ar_extract as ax  # noqa: E402
 
 APP_TITLE = "Annual Report Financials Extractor"
-SETTINGS = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")),
-                        "ARFinancialsExtractor", "settings.json")
+IS_MAC = sys.platform == "darwin"
+IS_WIN = sys.platform.startswith("win")
+UI_FONT = "Helvetica Neue" if IS_MAC else ("Segoe UI" if IS_WIN else "TkDefaultFont")
+
+
+def settings_dir():
+    if IS_WIN:
+        return os.environ.get("APPDATA", os.path.expanduser("~"))
+    if IS_MAC:
+        return os.path.expanduser("~/Library/Application Support")
+    return os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
+
+
+SETTINGS = os.path.join(settings_dir(), "ARFinancialsExtractor", "settings.json")
 
 
 def load_settings():
@@ -40,8 +54,14 @@ def save_settings(data):
 
 
 def open_path(path):
+    """Open a file or folder with the system's default app (Explorer / Finder / PDF viewer)."""
     try:
-        os.startfile(path)
+        if IS_WIN:
+            os.startfile(path)
+        elif IS_MAC:
+            subprocess.Popen(["open", path])
+        else:
+            subprocess.Popen(["xdg-open", path])
     except (AttributeError, OSError):
         messagebox.showinfo(APP_TITLE, path)
 
@@ -57,9 +77,9 @@ class App:
         root.geometry("980x680")
         root.minsize(760, 520)
         style = ttk.Style()
-        style.configure("Title.TLabel", font=("Segoe UI", 15, "bold"))
+        style.configure("Title.TLabel", font=(UI_FONT, 18 if IS_MAC else 15, "bold"))
         style.configure("Hint.TLabel", foreground="#555555")
-        style.configure("Big.TButton", font=("Segoe UI", 11, "bold"), padding=(18, 6))
+        style.configure("Big.TButton", font=(UI_FONT, 13 if IS_MAC else 11, "bold"), padding=(18, 6))
         style.configure("Treeview", rowheight=26)
 
         main = ttk.Frame(root, padding=16)
@@ -303,7 +323,7 @@ class CorrectDialog:
         f = ttk.Frame(top, padding=16)
         f.pack(fill="both", expand=True)
 
-        ttk.Label(f, text=os.path.basename(row["path"]), font=("Segoe UI", 11, "bold")
+        ttk.Label(f, text=os.path.basename(row["path"]), font=(UI_FONT, 13 if IS_MAC else 11, "bold")
                   ).grid(row=0, column=0, columnspan=3, sticky="w")
         ttk.Label(f, style="Hint.TLabel",
                   text=f"This PDF has {res.n_pages} pages. Use the page numbers your PDF viewer shows,\n"
@@ -354,12 +374,15 @@ class CorrectDialog:
 
 
 def main():
+    if IS_WIN:
+        try:
+            from ctypes import windll
+            windll.shcore.SetProcessDpiAwareness(1)  # sharp text on high-DPI screens
+        except Exception:
+            pass
     root = tk.Tk()
-    try:
-        from ctypes import windll
-        windll.shcore.SetProcessDpiAwareness(1)  # sharp text on high-DPI screens
-    except Exception:
-        pass
+    if IS_MAC:
+        root.createcommand("tk::mac::Quit", root.destroy)  # Cmd+Q closes cleanly
     App(root)
     root.mainloop()
 

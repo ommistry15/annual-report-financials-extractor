@@ -13,10 +13,12 @@ For every annual-report PDF in a folder, saves two PDFs:
 Files are named <Company>_<FY>_CFS.pdf and <Company>_<FY>_CFSN.pdf, with the
 company and year read from the report itself.
 
-Most people should use the window (double-click "Extract Financials.bat").
+Most people should use the window (double-click "Extract Financials.bat" on Windows,
+or "Extract Financials.command" on a Mac).
 Command line, mainly for testing:
     python ar_extract.py "C:\\...\\Annual_Reports"
     python ar_extract.py "C:\\...\\Annual_Reports" --dry-run
+    python3 ar_extract.py ~/Documents/Annual_Reports              (Mac)
 """
 
 import argparse
