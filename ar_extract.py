@@ -24,6 +24,7 @@ Command line, mainly for testing:
 import argparse
 import os
 import re
+import unicodedata
 import sys
 from dataclasses import dataclass, field
 
@@ -46,7 +47,15 @@ MAX_HEADING_WORDS = 16   # a heading line is short; body text is not
 
 # ---------------------------------------------------------------- text utils
 
+LIGATURE_FIXES = [  # broken fi/fl/ff ligatures (no text mapping in the PDF) come out as U+FFFD
+    ("\ufffdo", "flo"), ("\ufffdect", "ffect"), ("\ufffder", "ffer"), ("\ufffd", "fi")]
+
+
 def norm(s):
+    s = unicodedata.normalize("NFKC", s)  # real ligature characters (U+FB01 etc.) -> letters
+    if "\ufffd" in s:
+        for bad, good in LIGATURE_FIXES:
+            s = s.replace(bad, good)
     s = s.lower().replace("\u2019", "").replace("'", "").replace("`", "")
     s = s.replace("&", " and ")
     s = re.sub(r"[^a-z0-9\-\s]", " ", s)
@@ -103,6 +112,8 @@ P = {
     "aoc1": r"form (no )?aoc ?- ?1|salient features of (the )?financial statements? of subsidiar",
     "notice": r"^notice( of (the )?\d*\w* annual general meeting)?$|^notice is hereby given",
     "proxy": r"^(proxy form|attendance slip|route map)",
+    "ifrs": r"^extract of (the )?ifrs",   # Dr Reddy's prints IFRS statements after the notes
+    "glossary": r"^(glossary|abbreviations)$",
 }
 # Text that only appears in an auditor's report, never on a statement page
 AUDIT_TEXT = (r"we have audited|key audit matters?|basis for opinion|in conjunction with our audit"
@@ -156,12 +167,20 @@ def statement_kind(page, basis):
     """Which primary statement this page is titled as (bs/pl/soce/cf), else None.
     The title must start its line, so sentences such as "...the consolidated
     balance sheet..." in an auditor's report do not count."""
-    if re.search(AUDIT_TEXT, page.full) or number_share(page) < 0.15:
+    share = number_share(page)
+    if re.search(AUDIT_TEXT, page.full) or share < 0.10:
         return None
     for kind, pat in STATEMENT_TITLES.items():
-        hit = heading(page, rf"^(the )?((consolidated|standalone) )?(ind as )?{pat}\b")
-        if (hit and re.search(DATED, hit) and page_basis(hit, page) == basis
+        rx = rf"^(the )?((consolidated|standalone) )?(ind as )?{pat}\b"
+        hit = heading(page, rx)
+        if not (hit and re.search(DATED, hit) and page_basis(hit, page) == basis
                 and not re.search(P["notes"], hit)):
+            continue
+        # A statement sharing its page with prose (e.g. a two-page spread where the
+        # notes begin beside the Cash Flow) has fewer numbers: accept that only
+        # when the title is the very first heading on the page.
+        top = (page.head_lines or page.all_lines)[:2]
+        if share >= 0.15 or any(re.search(rx, ln) for ln in top):
             return kind
     return None
 
@@ -278,9 +297,19 @@ def detect_financials(pages, basis, res):
            and not is_notes_heading(pages[fs_start - 1], basis)):
         fs_start -= 1
 
-    # Notes start: first notes-heading page after the statements
+    # Notes start: first notes-heading page after the statements. A page can't
+    # start the notes if a statement not yet seen (e.g. the Cash Flow after a
+    # long Changes in Equity) still follows it; a repeated title inside the
+    # notes doesn't hold the start back.
+    first_seen = {}
+    for j in range(fs_start, last_stmt + 1):
+        k = statement_kind(pages[j], basis)
+        if k in ("bs", "pl", "cf"):
+            first_seen.setdefault(k, j)
     notes_start = None
     for j in range(fs_start + 1, min(last_stmt + 6, n)):
+        if any(i > j for i in first_seen.values()):
+            continue
         if is_notes_heading(pages[j], basis, opening=True) and not statement_kind(pages[j], basis):
             notes_start = j
             break
@@ -296,6 +325,10 @@ def detect_financials(pages, basis, res):
             keep.append(j)
         prev = kind
     res.pages["cfs"] = keep
+    # Two-page spreads: the notes can begin on the same page as the last statement
+    notes_first = notes_start
+    if keep and keep[-1] == notes_start - 1 and is_notes_heading(pages[keep[-1]], basis):
+        notes_first = keep[-1]
 
     # Notes end: next page whose title clearly starts something else
     other = "standalone" if basis == "consolidated" else "consolidated"
@@ -310,13 +343,19 @@ def detect_financials(pages, basis, res):
                 or any(re.search(P["notes"], ln) and other in ln and len(ln.split()) <= MAX_HEADING_WORDS
                        for ln in top)
                 or any(heading_hit(top, P[k], 12) for k in
-                       ("aoc1", "notice", "proxy", "mda", "directors", "brsr", "cg")))
+                       ("aoc1", "notice", "proxy", "mda", "directors", "brsr", "cg", "ifrs", "glossary")))
         if stop:
             notes_end = j - 1
+            # don't end on a blank or section-divider page (a few words of title
+            # artwork, or the contents of an "IFRS financial statements" section)
+            while notes_end > notes_start and (
+                    len(pages[notes_end].full.split()) < 15
+                    or (len(pages[notes_end].full.split()) < 80 and "ifrs" in pages[notes_end].full)):
+                notes_end -= 1
             break
     if notes_end == n - 1:
         res.warnings.append("notes run to end of file; check the last pages")
-    res.pages["cfsn"] = list(range(notes_start, notes_end + 1))
+    res.pages["cfsn"] = list(range(notes_first, notes_end + 1))
 
     # The "Other expenses" note goes at the end of CFS, for building financials
     oe = find_other_expenses(pages, res.pages["cfsn"])
@@ -327,24 +366,29 @@ def detect_financials(pages, basis, res):
     return True
 
 
-OTHER_EXP = r"other (operating )?expen(ses|diture)( net)?"
+# "Other expenses", "Other operating expenses", "Selling and other expenses" (Dr Reddy's) ...
+OTHER_EXP = r"(selling (general )?(and )?)?other (operating )?expen(ses|diture)( net)?"
 
 
 def find_other_expenses(pages, notes):
     """Pages of the 'Other expenses' note (its numbered heading, e.g.
     '35 Other expenses', plus any 'contd' pages that follow)."""
-    head_rx = re.compile(rf"^(note )?\d{{1,3}}(\.\d+)?[a-z]? {OTHER_EXP}$")
-    contd_rx = re.compile(rf"^(note )?(\d{{1,3}}(\.\d+)?[a-z]? )?{OTHER_EXP} (contd|continued|cont)$")
+    # note numbers: "35", "35a", and "2.21" (which norm() turns into "2 21")
+    num = r"\d{1,3}([ .]\d{1,2})?[a-z]?"
+    head_rx = re.compile(rf"^(note )?{num} {OTHER_EXP}$")
+    contd_rx = re.compile(rf"^(note )?({num} )?{OTHER_EXP} (contd|continued|cont)$")
     for pos, j in enumerate(notes):
         lines = pages[j].all_lines
         k = next((k for k, ln in enumerate(lines) if head_rx.search(ln)), None)
         if k is None:
             continue
-        found = [j]
+        found, title = [j], lines[k]
         # Table cut off by the page end (no total after the heading): take the next page too
         spill = not any(ln.startswith("total") for ln in lines[k + 1:])
         for nxt in notes[pos + 1:pos + 3]:
-            if any(contd_rx.search(ln) for ln in pages[nxt].all_lines[:25]) or spill:
+            top = pages[nxt].all_lines[:25]
+            # "... contd", or the same heading printed again at the top of the next page
+            if any(contd_rx.search(ln) or ln == title for ln in top) or spill:
                 found.append(nxt)
                 spill = False
             else:
